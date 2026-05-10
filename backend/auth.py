@@ -19,6 +19,7 @@ JWT_ALG = "HS256"
 ACCESS_TOKEN_EXPIRES_MIN = 60 * 12  # 12 hours
 COOKIE_NAME = "hanta_admin_session"
 COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRES_MIN * 60
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
 
 # auto_error=False so missing Bearer header doesn't 401 before we can check cookie
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
@@ -57,7 +58,7 @@ def set_session_cookie(response: Response, token: str) -> None:
         value=token,
         max_age=COOKIE_MAX_AGE,
         httponly=True,
-        secure=True,
+        secure=COOKIE_SECURE,
         samesite="lax",
         path="/",
     )

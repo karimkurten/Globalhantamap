@@ -1,6 +1,7 @@
 import { useEffect, useState, Fragment } from "react";
 import Layout from "../components/Layout";
 import AdSlot from "../components/AdSlot";
+import SEO from "../components/SEO";
 import { fetchNews } from "../lib/api";
 import { ArrowSquareOut } from "@phosphor-icons/react";
 
@@ -17,6 +18,11 @@ export default function News() {
   }, []);
   return (
     <Layout>
+      <SEO
+        title="Outbreak News & Alerts"
+        description="Live Hantavirus outbreak news feed sourced exclusively from verified public health authorities including WHO, CDC, ECDC and PAHO."
+        path="/news"
+      />
       <div className="max-w-[1100px] mx-auto px-4 md:px-8 py-8">
         <div className="mb-8">
           <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-2">

@@ -8,6 +8,7 @@ import Layout from "../components/Layout";
 import OutbreakMap from "../components/OutbreakMap";
 import AdSlot from "../components/AdSlot";
 import StatCard from "../components/StatCard";
+import SEO, { websiteJsonLd, organizationJsonLd } from "../components/SEO";
 import {
   fetchOutbreaks, fetchGlobalStats, fetchNews, subscribe,
 } from "../lib/api";
@@ -41,6 +42,13 @@ export default function Landing() {
 
   return (
     <Layout>
+      <SEO
+        path="/"
+        jsonLd={{
+          "@context": "https://schema.org",
+          "@graph": [websiteJsonLd, organizationJsonLd],
+        }}
+      />
       {/* HERO */}
       <section
         data-testid="hero-section"

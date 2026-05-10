@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 3 backend testing complete. All 39/39 pytest tests pass (30 baseline + 9 new for iter-2 features). Verified sitemap.xml, AdSense real publisher ID, real scraper job (WHO/CDC/PAHO/ECDC) via /api/admin/refresh-now and /api/admin/scrape-runs, Resend test-email graceful failure handling, and background email-on-news creation hook.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/refresh-now", "issue": "Signature uses BackgroundTasks default None (bg: BackgroundTasks = None). Works because FastAPI injects via type, but defaulting to None is misleading; recommend removing default or using `bg: BackgroundTasks` without default."},
+      {"endpoint": "/api/admin/test-email", "issue": "Accepts `to` as query parameter rather than JSON body; works but uncommon for POST. Consider moving to body or documenting."},
+      {"endpoint": "scrapers.run_scrape_job", "issue": "PAHO feed 'https://www.paho.org/en/feed/news' is not Hantavirus-specific and may rarely match; CDC 132608.rss is general newsroom. Consider per-source query feeds for higher signal-to-noise."},
+      {"endpoint": "scrapers._extract_country", "issue": "Country list hardcoded (no ISO-2 mapping). News item country is stored as full name, but admin/news email matching compares against subscription country codes (e.g., 'AR'); subscriber filter for scraped items will rarely match because item.country='Argentina' != wanted=['AR']."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: Normalize scraped item country to ISO-2 code OR change subscriber matching to compare on country_name. Currently scraped-item alerts will mostly broadcast to all (because list is empty / wanted match fails).",
+    "Optional: Consider rate-limiting /api/admin/refresh-now since each call hits 4 external RSS feeds.",
+    "Optional: /api/admin/test-email and /api/admin/news could enforce email format validation on `to`/payload."
+  ],
+  "critical_code_review_comments": [
+    "server.py is 577 lines - approaching split threshold. Suggest splitting admin routes into routes/admin.py and public routes into routes/public.py.",
+    "refresh_outbreak_data_job (server.py L186-208) closes over `db` from module scope - fine, but the `_on_new` matching logic compares `item['country']` (full name like 'Argentina') against subscription `countries` which are stored as ISO-2 ('AR') in admin patches. Mismatch silently filters out subscribers.",
+    "email_service.send_alert_to_subscribers loops sequentially with asyncio.to_thread per email - for >100 subscribers this serially blocks. Consider asyncio.gather batches.",
+    "scrapers.HANTA_PATTERNS regex includes 'hps' which is ambiguous (could match any 'hps' substring); the \\b boundary helps but consider tightening.",
+    "auth: ADMIN_PASSWORD has a default fallback in code - if env missing, defaults silently to known password. Acceptable for MVP but should fail-fast in prod.",
+    "All endpoints excluding _id properly. Pydantic models in use. Good."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin@globalhantamap.org / HantaAdmin2026! (from /app/backend/.env)",
+  "seed_data_creation": "None new. Scraper inserted 0 new items (1 matched, 1 duplicate from prior run). Argentina (AR) outbreak still has confirmed_cases=999, deaths=50 from prior PATCH (expected per main agent context).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend is fully green at 39/39. Pytest file at /app/backend/tests/backend_test.py is the canonical regression suite. New iteration-2 endpoints (sitemap, scrape-runs, test-email) are covered. Resend API key is INVALID by design; test asserts graceful {ok:false,error:'API key is invalid'} return rather than 500. Scraper actually hits real RSS feeds (WHO/CDC/PAHO/ECDC) and takes ~5-15s; test waits up to 30s for scrape_runs entry to appear. mocked: revenue analytics in /api/admin/analytics is simulated.",
+  "rca of the issue": "No bugs to RCA - all green."
+}

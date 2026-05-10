@@ -8,6 +8,7 @@ import { fetchOutbreak, aiSummary } from "../lib/api";
 import {
   Virus, Skull, Heart, Pulse, ArrowLeft, ArrowSquareOut, Sparkle,
 } from "@phosphor-icons/react";
+import SEO, { outbreakDatasetJsonLd } from "../components/SEO";
 
 export default function CountryDetail() {
   const { code } = useParams();
@@ -58,6 +59,12 @@ export default function CountryDetail() {
 
   return (
     <Layout>
+      <SEO
+        title={`${o.country_name} Hantavirus Outbreak`}
+        description={`${o.country_name}: ${o.confirmed_cases} confirmed Hantavirus cases, ${o.deaths} deaths, fatality rate ${o.fatality_rate}%. Verified data from official sources.`}
+        path={`/country/${o.country_code}`}
+        jsonLd={outbreakDatasetJsonLd(o)}
+      />
       <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-8">
         <Link
           to="/dashboard"

@@ -11,6 +11,7 @@ import {
   Virus, Skull, Globe, Pulse, Heart, Sparkle, MagnifyingGlass,
 } from "@phosphor-icons/react";
 import { Link } from "react-router-dom";
+import SEO from "../components/SEO";
 
 const SEVERITY_BADGE = {
   high: "border-signal-red/50 text-signal-red bg-signal-red/10",
@@ -53,6 +54,11 @@ export default function Dashboard() {
 
   return (
     <Layout>
+      <SEO
+        title="Live Hantavirus Dashboard"
+        description="Real-time global Hantavirus surveillance dashboard. Confirmed cases, deaths, fatality rates and country-level analytics from WHO, CDC, ECDC and PAHO."
+        path="/dashboard"
+      />
       <div className="max-w-[1400px] mx-auto px-4 md:px-8 py-8">
         <div className="mb-8">
           <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-2">

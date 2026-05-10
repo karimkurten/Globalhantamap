@@ -1,4 +1,5 @@
 import Layout from "../components/Layout";
+import SEO from "../components/SEO";
 
 const SOURCES = [
   { name: "World Health Organization (WHO)", url: "https://www.who.int" },
@@ -14,6 +15,11 @@ const SOURCES = [
 export default function About() {
   return (
     <Layout>
+      <SEO
+        title="About & Sources"
+        description="Methodology and verified data sources for Global Hanta Map. We aggregate Hantavirus outbreak data only from official public health authorities."
+        path="/about"
+      />
       <div className="max-w-[900px] mx-auto px-4 md:px-8 py-12">
         <div className="font-mono text-[10px] uppercase tracking-[0.2em] text-zinc-500 mb-2">
           Methodology · Sources · Disclaimer

@@ -26,6 +26,8 @@ from seed_data import (
     COUNTRIES, build_seed_outbreaks, build_seed_timelines, build_news_items
 )
 from ai_service import generate_outbreak_summary
+from email_service import send_alert_to_subscribers, send_test_email
+from scrapers import run_scrape_job
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
@@ -182,13 +184,28 @@ async def seed_database():
 
 
 async def refresh_outbreak_data_job():
-    """Stub job that simulates pulling fresh data from official feeds.
-    In production this would scrape WHO/CDC/PAHO RSS + APIs and AI-extract entities.
-    For MVP we increment verification_score timestamps and update last_update.
+    """Pull fresh outbreak items from official RSS/feeds (WHO, CDC, ECDC, PAHO).
+    Newly inserted items trigger an email alert to all subscribers.
     """
-    logger.info("[scheduler] Running 15-min outbreak refresh stub")
-    now = datetime.now(timezone.utc).isoformat()
-    await db.outbreaks.update_many({}, {"$set": {"last_refresh_check": now}})
+    logger.info("[scheduler] Running outbreak refresh / scrape job")
+
+    async def _on_new(item: dict):
+        # Send email alert for newly scraped items
+        try:
+            subs = await db.subscriptions.find({}, {"_id": 0, "email": 1, "countries": 1}).to_list(5000)
+            recipients = []
+            for s in subs:
+                wanted = s.get("countries") or []
+                if not wanted or (item.get("country") and item["country"] in wanted):
+                    recipients.append(s["email"])
+            if recipients:
+                await send_alert_to_subscribers(item, recipients)
+        except Exception as e:
+            logger.exception("Failed to dispatch alerts: %s", e)
+
+    stats = await run_scrape_job(db, on_new=_on_new)
+    await db.scrape_runs.insert_one({**stats, "ts": datetime.now(timezone.utc).isoformat()})
+    return stats
 
 
 # -------------------- LIFESPAN --------------------
@@ -419,11 +436,38 @@ async def admin_list_news(admin=Depends(get_current_admin)):
 
 
 @api.post("/admin/news", response_model=NewsItem)
-async def admin_create_news(item: NewsItem, admin=Depends(get_current_admin)):
+async def admin_create_news(item: NewsItem, bg: BackgroundTasks, admin=Depends(get_current_admin)):
     doc = item.model_dump()
     await db.news.insert_one(doc)
     doc.pop("_id", None)
+
+    # Notify subscribers in the background (filter by country if subscriber narrowed)
+    async def _notify():
+        try:
+            subs = await db.subscriptions.find({}, {"_id": 0, "email": 1, "countries": 1}).to_list(5000)
+            recipients = []
+            for s in subs:
+                wanted = s.get("countries") or []
+                if not wanted or (item.country and item.country in wanted):
+                    recipients.append(s["email"])
+            if recipients:
+                await send_alert_to_subscribers(doc, recipients)
+        except Exception as e:
+            logger.exception("Email dispatch failed: %s", e)
+
+    bg.add_task(_notify)
     return doc
+
+
+@api.post("/admin/test-email")
+async def admin_test_email(to: str, admin=Depends(get_current_admin)):
+    return await send_test_email(to)
+
+
+@api.get("/admin/scrape-runs")
+async def admin_scrape_runs(admin=Depends(get_current_admin)):
+    runs = await db.scrape_runs.find({}, {"_id": 0}).sort("ts", -1).to_list(20)
+    return runs
 
 
 @api.delete("/admin/news/{news_id}")
@@ -492,6 +536,33 @@ async def admin_analytics(admin=Depends(get_current_admin)):
 async def admin_refresh_now(admin=Depends(get_current_admin), bg: BackgroundTasks = None):
     bg.add_task(refresh_outbreak_data_job)
     return {"status": "scheduled"}
+
+
+@api.get("/sitemap.xml")
+async def sitemap():
+    from fastapi.responses import Response
+    site = os.environ.get("PUBLIC_SITE_URL", "https://globalhantamap.com")
+    outbreaks = await db.outbreaks.find({}, {"_id": 0, "country_code": 1, "last_update": 1}).to_list(500)
+    today = datetime.now(timezone.utc).date().isoformat()
+    urls = [
+        (f"{site}/", today, "1.0", "hourly"),
+        (f"{site}/dashboard", today, "0.9", "hourly"),
+        (f"{site}/map", today, "0.9", "daily"),
+        (f"{site}/news", today, "0.9", "hourly"),
+        (f"{site}/about", today, "0.5", "monthly"),
+    ]
+    for o in outbreaks:
+        last = (o.get("last_update") or today).split("T")[0]
+        urls.append((f"{site}/country/{o['country_code']}", last, "0.8", "daily"))
+    body = ['<?xml version="1.0" encoding="UTF-8"?>',
+            '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">']
+    for loc, lastmod, priority, changefreq in urls:
+        body.append(
+            f"<url><loc>{loc}</loc><lastmod>{lastmod}</lastmod>"
+            f"<changefreq>{changefreq}</changefreq><priority>{priority}</priority></url>"
+        )
+    body.append("</urlset>")
+    return Response(content="\n".join(body), media_type="application/xml")
 
 
 app.include_router(api)

@@ -298,3 +298,115 @@ class TestAdmin:
         r = requests.post(f"{API}/admin/refresh-now", headers=admin_headers)
         assert r.status_code == 200
         assert r.json().get("status") == "scheduled"
+
+
+# ------------- Iteration 2 additions ------------- #
+class TestConfigIteration2:
+    """Verify iteration 2 ENV wiring for config."""
+
+    def test_config_adsense_publisher_id_real(self, session):
+        r = session.get(f"{API}/config")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["adsense_publisher_id"] == "ca-pub-7999532935872277", \
+            f"AdSense ID is still placeholder: {data['adsense_publisher_id']}"
+
+
+class TestSitemap:
+    """GET /api/sitemap.xml should return valid XML with required URLs."""
+
+    def test_sitemap_returns_xml(self, session):
+        r = session.get(f"{API}/sitemap.xml")
+        assert r.status_code == 200
+        assert "xml" in r.headers.get("content-type", "").lower()
+        body = r.text
+        assert "<?xml" in body
+        assert "<urlset" in body and "</urlset>" in body
+        # core public routes
+        for path in ("/", "/dashboard", "/map", "/news", "/about"):
+            # Match either trailing slash root or path
+            if path == "/":
+                assert "<loc>" in body  # at least one loc
+                continue
+            assert path in body, f"missing {path} in sitemap"
+
+    def test_sitemap_includes_country_urls(self, session):
+        r = session.get(f"{API}/sitemap.xml")
+        assert r.status_code == 200
+        body = r.text
+        # AR country detail should appear
+        assert "/country/AR" in body, "country/AR URL missing in sitemap"
+
+
+class TestAdminScrapeAndEmail:
+    """Iteration 2: scraper job + scrape-runs + Resend test email."""
+
+    def test_scrape_runs_authenticated(self, admin_headers):
+        r = requests.get(f"{API}/admin/scrape-runs", headers=admin_headers)
+        assert r.status_code == 200
+        assert isinstance(r.json(), list)
+
+    def test_scrape_runs_unauthorized(self):
+        r = requests.get(f"{API}/admin/scrape-runs")
+        assert r.status_code == 401
+
+    def test_refresh_now_triggers_scrape_run(self, admin_headers):
+        # Capture baseline run count
+        r0 = requests.get(f"{API}/admin/scrape-runs", headers=admin_headers)
+        assert r0.status_code == 200
+        before = len(r0.json())
+
+        r = requests.post(f"{API}/admin/refresh-now", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json().get("status") == "scheduled"
+
+        # Allow time for scrape (real RSS calls)
+        new_run = None
+        for _ in range(20):  # up to ~30s
+            time.sleep(1.5)
+            rr = requests.get(f"{API}/admin/scrape-runs", headers=admin_headers)
+            if rr.status_code == 200 and len(rr.json()) > before:
+                new_run = rr.json()[0]
+                break
+        assert new_run is not None, "No new scrape run appeared after refresh-now"
+        for k in ("feeds_checked", "items_matched", "inserted", "duplicates"):
+            assert k in new_run, f"scrape run missing field {k}: {new_run}"
+        assert new_run["feeds_checked"] >= 1
+
+    def test_admin_test_email_graceful(self, admin_headers):
+        # Resend key may be invalid - endpoint must return JSON {ok:bool} not 500
+        r = requests.post(
+            f"{API}/admin/test-email",
+            params={"to": "test@example.com"},
+            headers=admin_headers,
+        )
+        assert r.status_code == 200, f"test-email crashed: {r.status_code} {r.text}"
+        data = r.json()
+        assert "ok" in data
+        if data["ok"] is False:
+            assert "error" in data and isinstance(data["error"], str)
+
+    def test_admin_test_email_unauthorized(self):
+        r = requests.post(f"{API}/admin/test-email", params={"to": "test@example.com"})
+        assert r.status_code == 401
+
+    def test_admin_news_create_schedules_email_task(self, admin_headers):
+        """POST /api/admin/news must succeed and not raise even when bg email task runs."""
+        from datetime import datetime, timezone
+        payload = {
+            "tag": "TEST",
+            "severity": "low",
+            "title": f"TEST_EmailHook_{uuid.uuid4().hex[:6]}",
+            "summary": "Iteration 2 - background email schedule hook test",
+            "country": "Argentina",
+            "published_at": datetime.now(timezone.utc).isoformat(),
+            "source": "TEST",
+            "source_url": "https://example.com/email-hook",
+        }
+        r = requests.post(f"{API}/admin/news", json=payload, headers=admin_headers)
+        assert r.status_code == 200, r.text
+        nid = r.json()["id"]
+        # Allow the background task to run
+        time.sleep(2)
+        # Cleanup
+        requests.delete(f"{API}/admin/news/{nid}", headers=admin_headers)

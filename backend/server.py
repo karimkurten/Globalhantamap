@@ -550,6 +550,14 @@ async def sitemap():
         (f"{site}/map", today, "0.9", "daily"),
         (f"{site}/news", today, "0.9", "hourly"),
         (f"{site}/about", today, "0.5", "monthly"),
+        (f"{site}/contact", today, "0.5", "monthly"),
+        (f"{site}/transparency", today, "0.6", "monthly"),
+        (f"{site}/privacy", today, "0.4", "yearly"),
+        (f"{site}/terms", today, "0.4", "yearly"),
+        (f"{site}/disclaimer", today, "0.4", "yearly"),
+        (f"{site}/cookies", today, "0.4", "yearly"),
+        (f"{site}/dmca", today, "0.3", "yearly"),
+        (f"{site}/accessibility", today, "0.3", "yearly"),
     ]
     for o in outbreaks:
         last = (o.get("last_update") or today).split("T")[0]

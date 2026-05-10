@@ -23,7 +23,19 @@ Build a modern, scalable, production-ready global disease surveillance platform 
 - **Frontend (React)**: routes `/`, `/dashboard`, `/map`, `/country/:code`, `/news`, `/about`, `/admin/login`, `/admin`. react-leaflet + Recharts + Phosphor + react-fast-marquee. Swiss/Brutalist Dark "Control Room" theme (Chivo / IBM Plex / JetBrains Mono).
 - **Design**: dark `#0A0A0A` background, `#121212` cards, `#FF3B30` Signal Red accent, sharp 4px radius.
 
-## What's Been Implemented (Feb 2026)
+## What's Been Implemented (Feb 2026 · Iteration 2)
+### Iteration 2 (live integrations)
+- **Real Google AdSense** wired with publisher ID `ca-pub-7999532935872277` — script in `<head>`, `<AdSlot>` renders real `<ins class="adsbygoogle">` when per-slot IDs are configured (placeholder shown otherwise)
+- **Real WHO/CDC/PAHO/ECDC RSS scrapers** (`scrapers.py`) replacing the stub — Hantavirus regex filter, country extraction, dedup; runs every 15 min via APScheduler
+- **Resend email integration** (`email_service.py`) — outbreak alerts auto-dispatch to subscribers when admin publishes news OR scraper finds new items; test-email endpoint at `/api/admin/test-email`
+- **SEO upgrades**: react-helmet-async on every public page (dynamic title/description/canonical/OG/Twitter), JSON-LD structured data (WebSite, Organization, Dataset for country pages, NewsArticle), sitemap.xml at `/api/sitemap.xml`, robots.txt
+- **Scrape audit**: `/api/admin/scrape-runs` — last 20 scrape runs with feed/insertion stats
+
+### Iteration 1
+- Public site: Landing, /dashboard, /map, /country/:code, /news, /about
+- Admin console: /admin/login + /admin (analytics, outbreaks, news, subscribers, ads)
+- 16 seeded countries + 60-day timelines + 15 news + 5 ad slots
+- JWT bcrypt auth, Claude Sonnet 4.5 AI briefings, Cookie consent, Breaking ticker
 ### Public
 - Landing page with hero, live counters, map preview, sources strip, feature grid, news, subscribe form, hero ad
 - `/dashboard` – 6 stat cards, global Leaflet map with severity legend, AI briefing panel, daily/cumulative charts, country surveillance table with search + severity filter, latest alerts, sidebar/in-content ads

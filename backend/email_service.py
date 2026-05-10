@@ -5,9 +5,42 @@ import logging
 import resend
 
 logger = logging.getLogger(__name__)
-resend.api_key = os.environ.get("RESEND_API_KEY", "")
-SENDER_EMAIL = os.environ.get("SENDER_EMAIL", "onboarding@resend.dev")
 PUBLIC_SITE_URL = os.environ.get("PUBLIC_SITE_URL", "https://globalhantamap.com")
+FALLBACK_SENDER = "onboarding@resend.dev"
+
+
+def _primary_sender() -> str:
+    return os.environ.get("SENDER_EMAIL", FALLBACK_SENDER)
+
+
+def _ensure_key() -> str | None:
+    """Resolve API key lazily so it picks up env loaded after import."""
+    key = os.environ.get("RESEND_API_KEY")
+    if key:
+        resend.api_key = key
+    return key
+
+
+def _send_with_fallback(params: dict) -> dict:
+    """Send via Resend; if primary sender's domain is unverified, retry with the
+    Resend default sender so users still receive their alerts.
+    """
+    try:
+        return resend.Emails.send(params)
+    except Exception as e:
+        msg = str(e).lower()
+        if (
+            "domain is not verified" in msg
+            or "domain is not allowed" in msg
+            or "from address" in msg
+        ) and params.get("from") != FALLBACK_SENDER:
+            logger.warning(
+                "Resend rejected sender %s (%s). Falling back to %s.",
+                params.get("from"), e, FALLBACK_SENDER,
+            )
+            params["from"] = FALLBACK_SENDER
+            return resend.Emails.send(params)
+        raise
 
 
 def _alert_html(news_item: dict) -> str:
@@ -47,7 +80,7 @@ async def send_alert_to_subscribers(news_item: dict, recipients: list[str]) -> d
     """Send a news alert to a list of subscribers. Non-blocking via to_thread."""
     if not recipients:
         return {"sent": 0, "skipped": "no_recipients"}
-    if not os.environ.get("RESEND_API_KEY"):
+    if not _ensure_key():
         logger.warning("RESEND_API_KEY missing; skipping email send")
         return {"sent": 0, "skipped": "no_api_key"}
 
@@ -58,12 +91,12 @@ async def send_alert_to_subscribers(news_item: dict, recipients: list[str]) -> d
     for email in recipients:
         try:
             params = {
-                "from": SENDER_EMAIL,
+                "from": _primary_sender(),
                 "to": [email],
                 "subject": subject,
                 "html": html,
             }
-            await asyncio.to_thread(resend.Emails.send, params)
+            await asyncio.to_thread(_send_with_fallback, params)
             sent += 1
         except Exception as e:
             failed += 1
@@ -72,10 +105,10 @@ async def send_alert_to_subscribers(news_item: dict, recipients: list[str]) -> d
 
 
 async def send_test_email(to: str) -> dict:
-    if not os.environ.get("RESEND_API_KEY"):
+    if not _ensure_key():
         return {"ok": False, "error": "RESEND_API_KEY missing"}
     params = {
-        "from": SENDER_EMAIL,
+        "from": _primary_sender(),
         "to": [to],
         "subject": "Test · Global Hanta Map",
         "html": _alert_html({
@@ -86,7 +119,13 @@ async def send_test_email(to: str) -> dict:
         }),
     }
     try:
-        result = await asyncio.to_thread(resend.Emails.send, params)
-        return {"ok": True, "id": result.get("id") if isinstance(result, dict) else None}
+        result = await asyncio.to_thread(_send_with_fallback, params)
+        rid = result.get("id") if isinstance(result, dict) else None
+        return {
+            "ok": True,
+            "id": rid,
+            "from_used": params["from"],
+            "domain_verified": params["from"] != FALLBACK_SENDER,
+        }
     except Exception as e:
         return {"ok": False, "error": str(e)}

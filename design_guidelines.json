@@ -1,0 +1,124 @@
+{
+  "theme": "dark",
+  "archetype": "Archetype 4 (Swiss & High-Contrast) - Dark Mode Variant",
+  "typography": {
+    "headings": {
+      "font_family": "Chivo",
+      "weights": ["light", "bold", "black"],
+      "classes": "font-sans tracking-tight leading-none"
+    },
+    "body": {
+      "font_family": "IBM Plex Sans",
+      "weights": ["regular", "medium"],
+      "classes": "font-sans tracking-normal leading-relaxed text-gray-300"
+    },
+    "mono": {
+      "font_family": "JetBrains Mono",
+      "classes": "font-mono text-sm tracking-wider uppercase"
+    },
+    "hierarchy_rules": [
+      "H1: text-4xl sm:text-5xl lg:text-6xl max",
+      "H2: text-2xl sm:text-3xl lg:text-4xl",
+      "H3: text-xl sm:text-2xl",
+      "Labels/Overlines: uppercase text-xs tracking-[0.2em] font-mono text-gray-400"
+    ]
+  },
+  "colors": {
+    "background": {
+      "primary": "#0A0A0A",
+      "secondary": "#121212",
+      "tertiary": "#1A1A1A"
+    },
+    "text": {
+      "primary": "#FFFFFF",
+      "secondary": "#A0A0A0",
+      "muted": "#737373"
+    },
+    "accents": {
+      "danger": "#FF3B30",
+      "danger_hover": "#D32F2F",
+      "warning": "#FF9500",
+      "info": "#007AFF"
+    },
+    "borders": {
+      "default": "#2A2A2A",
+      "light": "#333333"
+    },
+    "rules": [
+      "No pure #000000 - use #0A0A0A for deepest background.",
+      "Primary CTA should use Signal Red (#FF3B30) for alerts, or white outline for secondary.",
+      "Explicitly set text color on hover (e.g., hover:bg-white/10 hover:text-white)."
+    ]
+  },
+  "layout_and_spacing": {
+    "strategy": "The 'Control Room' Grid",
+    "grid_classes": "grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-4 md:gap-6",
+    "spacing_scale": "p-1, p-2, p-4, p-6, p-8, p-12",
+    "container_padding": "p-6",
+    "rules": [
+      "Every pixel utilized, h-full on children for uniform stretching.",
+      "Containers with borders MUST have internal padding (p-6).",
+      "Optical alignment: if an element has a round icon on left, use extra padding to visually center text."
+    ]
+  },
+  "surfaces_and_borders": {
+    "cards": "Flat background (#121212), 1px solid border (border-[#2A2A2A]), no shadow.",
+    "hover_state": "-translate-y-1 shadow-[0_8px_32px_rgba(255,59,48,0.15)] border-red-500/50 transition-all",
+    "header": "Crystal Glass - backdrop-blur-xl bg-[#0A0A0A]/70 border-b border-[#2A2A2A] z-50",
+    "data_widgets": "Grid Borders - expose the skeleton, subtle borders on right and bottom of grid items."
+  },
+  "components_and_libraries": {
+    "icons": {
+      "library": "@phosphor-icons/react",
+      "install_command": "yarn add @phosphor-icons/react",
+      "usage": "Use Phosphor icons (Duotone or Regular) for dense data visualizations and UI adornments."
+    },
+    "charts": {
+      "library": "recharts",
+      "usage": "Use Recharts for epidemiological curves and daily case timelines. Ensure lines are bright neon (Red/Blue) with dark grid lines (stroke='#333')."
+    },
+    "maps": {
+      "library": "leaflet, react-leaflet",
+      "usage": "Use react-leaflet for interactive maps. MUST use dark mode tiles: 'https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png'. Heatmaps must use red/orange gradients."
+    },
+    "ui_components": {
+      "library": "shadcn/ui",
+      "usage": "Use Shadcn components heavily customized to match the Swiss Brutalist/Dark Control Room aesthetic. Strip default Vercel-look borders, use sharp or max 4px border-radius (rounded-sm)."
+    }
+  },
+  "media_and_images": {
+    "hero_overlay": "bg-black/60 to ensure map data pops.",
+    "image_urls": [
+      {
+        "category": "hero_background",
+        "url": "https://images.unsplash.com/photo-1750707247517-d633ad84a1a3?crop=entropy&cs=srgb&fm=jpg&ixid=M3w3NDk1Nzh8MHwxfHNlYXJjaHwyfHxhYnN0cmFjdCUyMGRhcmslMjByZWQlMjBkYXRhfGVufDB8fHx8MTc3ODM4Mzc5OXww&ixlib=rb-4.1.0&q=85",
+        "description": "Abstract red data explosion - use for alert sections or AI insights background with bg-black/80 overlay."
+      },
+      {
+        "category": "medical_research",
+        "url": "https://images.unsplash.com/photo-1576765608689-c0e8f69a46b2?crop=entropy&cs=srgb&fm=jpg&ixid=M3w4NjA1NDh8MHwxfHNlYXJjaHwyfHxtZWRpY2FsJTIwcmVzZWFyY2glMjB2aXJ1c3xlbnwwfHx8fDE3NzgzODM3ODN8MA&ixlib=rb-4.1.0&q=85",
+        "description": "Lab research image - use for about/methodology sections."
+      }
+    ],
+    "logos": {
+      "instruction_to_main_agent": "CRITICAL: Do NOT use placeholder image URLs for WHO, CDC, ECDC logos. Create typographic logos using plain text (e.g., <div class='font-black text-xl tracking-tighter'>WHO</div>) or use Phosphor Icons to represent institutions."
+    }
+  },
+  "animations_and_interactions": {
+    "hover": "Explicit hover colors, slight lift (-translate-y-1).",
+    "transitions": "Use specific properties: transition: transform 0.2s ease, border-color 0.2s ease, opacity 0.2s ease.",
+    "marquee": "Use react-fast-marquee for a slow 'Editorial Ribbon' of breaking news/alerts across the top or middle of the dashboard. Slow, smooth drift. Red text on dark background."
+  },
+  "accessibility_and_testing": {
+    "testing": "All interactive and key informational elements MUST include a data-testid attribute (e.g., data-testid='map-view-toggle').",
+    "contrast": "Ensure text over red/dark backgrounds passes APCA/WCAG ratios. Use text-shadow if overlaid on the map."
+  },
+  "instructions_to_main_agent": [
+    "NEVER USE PLACEHOLDER IMAGES (e.g., via.placeholder.com). Use the provided Unsplash URLs or CSS/Text for logos.",
+    "Implement the Leaflet map immediately as it's the core functionality. Use CartoDB Dark Matter tiles.",
+    "Data structure must support multiple countries, confirmed cases, active outbreaks, deaths, and timestamps.",
+    "Include placeholder spaces for Google AdSense (e.g., a div with 'Advertisement' label and specific dimensions like w-full h-32 bg-[#121212] border border-[#2A2A2A] flex items-center justify-center text-gray-500 font-mono text-xs).",
+    "Ensure the dashboard is mobile-first, but optimized for large desktop screens (command-center feel).",
+    "No Inter font for headings. Use Chivo."
+  ]
+}

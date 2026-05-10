@@ -1,4 +1,9 @@
 User-agent: *
 Allow: /
 Disallow: /admin
-Sitemap: https://globalhantamap.com/sitemap.xml
+
+# Preview environment sitemap
+Sitemap: https://virus-tracker-7.preview.emergentagent.com/api/sitemap.xml
+
+# Production sitemap (after you deploy to globalhantamap.com)
+Sitemap: https://globalhantamap.com/api/sitemap.xml

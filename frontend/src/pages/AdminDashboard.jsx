@@ -4,14 +4,14 @@ import { useAuth } from "../lib/auth";
 import {
   adminFetchOutbreaks, adminUpdateOutbreak, adminFetchNews, adminCreateNews,
   adminDeleteNews, adminFetchSubs, adminFetchAdSlots, adminUpdateAdSlot,
-  adminAnalytics, adminRefreshNow,
+  adminAnalytics, adminRefreshNow, adminReseed, fetchHealth,
 } from "../lib/api";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import {
   SignOut, Pencil, Trash, ArrowsClockwise, ChartLineUp, EnvelopeSimple,
-  Megaphone, MapTrifold, CurrencyDollar,
+  Megaphone, MapTrifold, CurrencyDollar, Database,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -110,6 +110,30 @@ export default function AdminDashboard() {
     toast.success("Refresh job triggered");
   };
 
+  const reseed = async () => {
+    try {
+      const r = await adminReseed();
+      const inserted = Object.entries(r)
+        .filter(([k]) => k.endsWith("_inserted"))
+        .map(([k, v]) => `${k.replace("_inserted", "")}: ${v}`)
+        .join(", ");
+      toast.success(inserted ? `Seeded → ${inserted}` : "All collections already populated");
+      loadAll();
+    } catch (e) {
+      toast.error("Reseed failed");
+    }
+  };
+
+  const runHealthCheck = async () => {
+    try {
+      const h = await fetchHealth();
+      const c = h.counts || {};
+      toast.success(`DB '${h.database}' · outbreaks:${c.outbreaks} news:${c.news} timelines:${c.timelines}`);
+    } catch {
+      toast.error("Health check failed");
+    }
+  };
+
   return (
     <div className="min-h-screen bg-ink-0 text-white">
       <header className="border-b border-ink-3 bg-ink-1">
@@ -120,6 +144,20 @@ export default function AdminDashboard() {
             </Link>
           </div>
           <div className="flex items-center gap-3">
+            <button
+              data-testid="admin-health"
+              onClick={runHealthCheck}
+              className="hidden md:flex items-center gap-2 px-3 py-2 border border-ink-3 hover:border-white/30 text-xs font-mono uppercase tracking-wider rounded-sm"
+            >
+              <Database size={14} /> Health
+            </button>
+            <button
+              data-testid="admin-reseed"
+              onClick={reseed}
+              className="flex items-center gap-2 px-3 py-2 border border-signal-orange/40 text-signal-orange hover:bg-signal-orange/10 text-xs font-mono uppercase tracking-wider rounded-sm"
+            >
+              <Database size={14} /> Reseed
+            </button>
             <button
               data-testid="admin-refresh"
               onClick={refresh}

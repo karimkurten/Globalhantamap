@@ -138,50 +138,83 @@ def _strip_id(doc: dict) -> dict:
 
 
 async def seed_database():
-    # Seed countries / outbreaks
-    if await db.outbreaks.count_documents({}) == 0:
-        outbreaks = build_seed_outbreaks()
-        for o in outbreaks:
-            o["id"] = str(uuid.uuid4())
-        await db.outbreaks.insert_many(outbreaks)
-        logger.info("Seeded %d outbreaks", len(outbreaks))
+    """Idempotently seed the database. Each collection is seeded independently so
+    a failure in one does not prevent the others, and progress is logged."""
+    # Outbreaks
+    try:
+        count = await db.outbreaks.count_documents({})
+        if count == 0:
+            outbreaks = build_seed_outbreaks()
+            for o in outbreaks:
+                o["id"] = str(uuid.uuid4())
+            await db.outbreaks.insert_many(outbreaks)
+            logger.info("[seed] Seeded %d outbreaks", len(outbreaks))
+        else:
+            logger.info("[seed] outbreaks already has %d docs - skipping", count)
+    except Exception as e:
+        logger.exception("[seed] outbreaks seeding failed: %s", e)
 
-    if await db.timelines.count_documents({}) == 0:
-        timelines = build_seed_timelines()
-        docs = [{"country_code": code, "points": pts} for code, pts in timelines.items()]
-        await db.timelines.insert_many(docs)
-        logger.info("Seeded timelines for %d countries", len(docs))
+    # Timelines
+    try:
+        count = await db.timelines.count_documents({})
+        if count == 0:
+            timelines = build_seed_timelines()
+            docs = [{"country_code": code, "points": pts} for code, pts in timelines.items()]
+            await db.timelines.insert_many(docs)
+            logger.info("[seed] Seeded timelines for %d countries", len(docs))
+        else:
+            logger.info("[seed] timelines already has %d docs - skipping", count)
+    except Exception as e:
+        logger.exception("[seed] timelines seeding failed: %s", e)
 
-    if await db.news.count_documents({}) == 0:
-        items = build_news_items(15)
-        for it in items:
-            it["id"] = str(uuid.uuid4())
-        await db.news.insert_many(items)
-        logger.info("Seeded %d news items", len(items))
+    # News
+    try:
+        count = await db.news.count_documents({})
+        if count == 0:
+            items = build_news_items(15)
+            for it in items:
+                it["id"] = str(uuid.uuid4())
+            await db.news.insert_many(items)
+            logger.info("[seed] Seeded %d news items", len(items))
+        else:
+            logger.info("[seed] news already has %d docs - skipping", count)
+    except Exception as e:
+        logger.exception("[seed] news seeding failed: %s", e)
 
-    # Seed admin user
-    existing = await db.users.find_one({"email": ADMIN_EMAIL})
-    if not existing:
-        await db.users.insert_one({
-            "id": str(uuid.uuid4()),
-            "email": ADMIN_EMAIL,
-            "password_hash": hash_password(ADMIN_PASSWORD),
-            "role": "admin",
-            "created_at": datetime.now(timezone.utc).isoformat(),
-        })
-        logger.info("Seeded admin user %s", ADMIN_EMAIL)
+    # Admin user
+    try:
+        existing = await db.users.find_one({"email": ADMIN_EMAIL})
+        if not existing:
+            await db.users.insert_one({
+                "id": str(uuid.uuid4()),
+                "email": ADMIN_EMAIL,
+                "password_hash": hash_password(ADMIN_PASSWORD),
+                "role": "admin",
+                "created_at": datetime.now(timezone.utc).isoformat(),
+            })
+            logger.info("[seed] Seeded admin user %s", ADMIN_EMAIL)
+        else:
+            logger.info("[seed] admin user already exists")
+    except Exception as e:
+        logger.exception("[seed] admin user seeding failed: %s", e)
 
-    # Seed default ad slots
-    if await db.ad_slots.count_documents({}) == 0:
-        slots = [
-            {"slot_key": "homepage_hero", "enabled": True, "label": "Homepage Hero Banner", "description": "728x90 banner under hero"},
-            {"slot_key": "sidebar_dashboard", "enabled": True, "label": "Dashboard Sidebar", "description": "300x250 sidebar"},
-            {"slot_key": "in_content_news", "enabled": True, "label": "In-Content News", "description": "Native ad between news items"},
-            {"slot_key": "sticky_mobile_footer", "enabled": True, "label": "Sticky Mobile Footer", "description": "320x50 mobile sticky"},
-            {"slot_key": "country_page", "enabled": True, "label": "Country Page", "description": "300x250 in country detail"},
-        ]
-        await db.ad_slots.insert_many(slots)
-        logger.info("Seeded %d ad slots", len(slots))
+    # Ad slots
+    try:
+        count = await db.ad_slots.count_documents({})
+        if count == 0:
+            slots = [
+                {"slot_key": "homepage_hero", "enabled": True, "label": "Homepage Hero Banner", "description": "728x90 banner under hero"},
+                {"slot_key": "sidebar_dashboard", "enabled": True, "label": "Dashboard Sidebar", "description": "300x250 sidebar"},
+                {"slot_key": "in_content_news", "enabled": True, "label": "In-Content News", "description": "Native ad between news items"},
+                {"slot_key": "sticky_mobile_footer", "enabled": True, "label": "Sticky Mobile Footer", "description": "320x50 mobile sticky"},
+                {"slot_key": "country_page", "enabled": True, "label": "Country Page", "description": "300x250 in country detail"},
+            ]
+            await db.ad_slots.insert_many(slots)
+            logger.info("[seed] Seeded %d ad slots", len(slots))
+        else:
+            logger.info("[seed] ad_slots already has %d docs - skipping", count)
+    except Exception as e:
+        logger.exception("[seed] ad_slots seeding failed: %s", e)
 
 
 async def refresh_outbreak_data_job():
@@ -545,6 +578,85 @@ async def admin_analytics(admin=Depends(get_current_admin)):
 async def admin_refresh_now(admin=Depends(get_current_admin), bg: BackgroundTasks = None):
     bg.add_task(refresh_outbreak_data_job)
     return {"status": "scheduled"}
+
+
+@api.post("/admin/reseed")
+async def admin_reseed(admin=Depends(get_current_admin)):
+    """Force-reseed the database. Idempotent: only inserts when collection is empty.
+    Use this if production starts with empty collections (e.g. fresh DB after deploy)."""
+    summary = {}
+
+    # Outbreaks
+    count = await db.outbreaks.count_documents({})
+    if count == 0:
+        outbreaks = build_seed_outbreaks()
+        for o in outbreaks:
+            o["id"] = str(uuid.uuid4())
+        await db.outbreaks.insert_many(outbreaks)
+        summary["outbreaks_inserted"] = len(outbreaks)
+    else:
+        summary["outbreaks_existing"] = count
+
+    # Timelines
+    count = await db.timelines.count_documents({})
+    if count == 0:
+        timelines = build_seed_timelines()
+        docs = [{"country_code": code, "points": pts} for code, pts in timelines.items()]
+        await db.timelines.insert_many(docs)
+        summary["timelines_inserted"] = len(docs)
+    else:
+        summary["timelines_existing"] = count
+
+    # News
+    count = await db.news.count_documents({})
+    if count == 0:
+        items = build_news_items(15)
+        for it in items:
+            it["id"] = str(uuid.uuid4())
+        await db.news.insert_many(items)
+        summary["news_inserted"] = len(items)
+    else:
+        summary["news_existing"] = count
+
+    # Ad slots
+    count = await db.ad_slots.count_documents({})
+    if count == 0:
+        slots = [
+            {"slot_key": "homepage_hero", "enabled": True, "label": "Homepage Hero Banner", "description": "728x90 banner under hero"},
+            {"slot_key": "sidebar_dashboard", "enabled": True, "label": "Dashboard Sidebar", "description": "300x250 sidebar"},
+            {"slot_key": "in_content_news", "enabled": True, "label": "In-Content News", "description": "Native ad between news items"},
+            {"slot_key": "sticky_mobile_footer", "enabled": True, "label": "Sticky Mobile Footer", "description": "320x50 mobile sticky"},
+            {"slot_key": "country_page", "enabled": True, "label": "Country Page", "description": "300x250 in country detail"},
+        ]
+        await db.ad_slots.insert_many(slots)
+        summary["ad_slots_inserted"] = len(slots)
+    else:
+        summary["ad_slots_existing"] = count
+
+    summary["status"] = "ok"
+    return summary
+
+
+@api.get("/health")
+async def health_check():
+    """Public health check: confirms DB connectivity and shows data sizes."""
+    try:
+        counts = {
+            "outbreaks": await db.outbreaks.count_documents({}),
+            "timelines": await db.timelines.count_documents({}),
+            "news": await db.news.count_documents({}),
+            "ad_slots": await db.ad_slots.count_documents({}),
+            "users": await db.users.count_documents({}),
+            "subscriptions": await db.subscriptions.count_documents({}),
+        }
+        return {
+            "status": "ok",
+            "database": os.environ.get("DB_NAME", "unknown"),
+            "counts": counts,
+            "data_loaded": counts["outbreaks"] > 0,
+        }
+    except Exception as e:
+        return {"status": "error", "error": str(e)}
 
 
 @api.get("/sitemap.xml")

@@ -62,3 +62,5 @@ export const adminAnalytics = () =>
   api.get("/admin/analytics").then((r) => r.data);
 export const adminRefreshNow = () =>
   api.post("/admin/refresh-now").then((r) => r.data);
+export const adminReseed = () => api.post("/admin/reseed").then((r) => r.data);
+export const fetchHealth = () => api.get("/health").then((r) => r.data);

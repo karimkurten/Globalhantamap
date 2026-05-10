@@ -7,7 +7,7 @@ import { toast } from "sonner";
 export default function AdminLogin() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("admin@globalhantamap.org");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -59,6 +59,7 @@ export default function AdminLogin() {
           value={email}
           onChange={(e) => setEmail(e.target.value)}
           type="email"
+          placeholder="you@health.org"
           required
           className="w-full mb-4 px-3 py-2.5 bg-ink-0 border border-ink-3 outline-none focus:border-white/30 text-sm"
         />

@@ -85,6 +85,33 @@ async def _fetch_feed(url: str):
         return None
 
 
+def _entry_to_item(entry, feed: dict) -> dict | None:
+    """Normalize a single feed entry → news item, or None if not Hanta-related."""
+    title = (entry.get("title") or "").strip()
+    summary = (entry.get("summary") or entry.get("description") or "").strip()
+    summary = re.sub(r"<[^>]+>", "", summary)[:400]
+    text = f"{title} {summary}"
+    if not HANTA_PATTERNS.search(text):
+        return None
+    severity = (
+        "high"
+        if re.search(r"(outbreak|deaths?|fatal)", text, re.I)
+        else feed["default_severity"]
+    )
+    return {
+        "id": _entry_id(entry),
+        "tag": "OFFICIAL",
+        "severity": severity,
+        "title": title[:240] or "Hantavirus update",
+        "summary": summary or "Official update from a verified public health source.",
+        "country": _extract_country(text),
+        "published_at": _entry_published(entry),
+        "source": feed["source_name"],
+        "source_url": entry.get("link") or feed["url"],
+        "scraped": True,
+    }
+
+
 async def collect_hanta_items() -> Iterable[dict]:
     """Collect normalized Hantavirus-related news items from all feeds."""
     out: list[dict] = []
@@ -93,26 +120,9 @@ async def collect_hanta_items() -> Iterable[dict]:
         if not parsed or not getattr(parsed, "entries", None):
             continue
         for entry in parsed.entries[:30]:
-            title = (entry.get("title") or "").strip()
-            summary = (entry.get("summary") or entry.get("description") or "").strip()
-            summary = re.sub(r"<[^>]+>", "", summary)[:400]
-            text = f"{title} {summary}"
-            if not HANTA_PATTERNS.search(text):
-                continue
-            country = _extract_country(text)
-            severity = "high" if re.search(r"(outbreak|deaths?|fatal)", text, re.I) else feed["default_severity"]
-            out.append({
-                "id": _entry_id(entry),
-                "tag": "OFFICIAL",
-                "severity": severity,
-                "title": title[:240] or "Hantavirus update",
-                "summary": summary or "Official update from a verified public health source.",
-                "country": country,
-                "published_at": _entry_published(entry),
-                "source": feed["source_name"],
-                "source_url": entry.get("link") or feed["url"],
-                "scraped": True,
-            })
+            item = _entry_to_item(entry, feed)
+            if item:
+                out.append(item)
     return out
 
 

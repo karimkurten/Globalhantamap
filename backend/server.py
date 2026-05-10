@@ -4,7 +4,7 @@ Tracks Hantavirus outbreaks worldwide. Aggregates verified data from official
 sources (WHO, CDC, ECDC, PAHO, national ministries of health). All numbers are
 illustrative and based on publicly available reports for MVP demonstration.
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, BackgroundTasks
+from fastapi import FastAPI, APIRouter, HTTPException, Depends, Query, BackgroundTasks, Response
 from fastapi.security import OAuth2PasswordRequestForm
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -20,7 +20,8 @@ from contextlib import asynccontextmanager
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from auth import (
-    hash_password, verify_password, create_access_token, get_current_admin
+    hash_password, verify_password, create_access_token, get_current_admin,
+    set_session_cookie, clear_session_cookie,
 )
 from seed_data import (
     COUNTRIES, build_seed_outbreaks, build_seed_timelines, build_news_items
@@ -381,21 +382,29 @@ async def public_ad_slots():
 
 # -------------------- AUTH ROUTES --------------------
 @api.post("/auth/login", response_model=TokenResponse)
-async def login(form_data: OAuth2PasswordRequestForm = Depends()):
+async def login(response: Response, form_data: OAuth2PasswordRequestForm = Depends()):
     user = await db.users.find_one({"email": form_data.username})
     if not user or not verify_password(form_data.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
     token = create_access_token({"sub": user["email"], "role": user.get("role", "user")})
+    set_session_cookie(response, token)
     return TokenResponse(access_token=token, email=user["email"])
 
 
 @api.post("/auth/login-json", response_model=TokenResponse)
-async def login_json(payload: LoginRequest):
+async def login_json(payload: LoginRequest, response: Response):
     user = await db.users.find_one({"email": payload.email})
     if not user or not verify_password(payload.password, user["password_hash"]):
         raise HTTPException(401, "Invalid credentials")
     token = create_access_token({"sub": user["email"], "role": user.get("role", "user")})
+    set_session_cookie(response, token)
     return TokenResponse(access_token=token, email=user["email"])
+
+
+@api.post("/auth/logout")
+async def logout(response: Response):
+    clear_session_cookie(response)
+    return {"ok": True}
 
 
 @api.get("/auth/me")

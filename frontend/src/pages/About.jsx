@@ -221,7 +221,7 @@ export default function About() {
           </h2>
           <div className="border border-ink-3 bg-ink-0">
             {FAQ.map((f, i) => (
-              <div key={i} className="border-b border-ink-3 last:border-b-0">
+              <div key={f.q} className="border-b border-ink-3 last:border-b-0">
                 <button
                   data-testid={`faq-toggle-${i}`}
                   onClick={() => setOpenFaq(openFaq === i ? -1 : i)}

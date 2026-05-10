@@ -41,8 +41,9 @@ export default function AdSlot({
     try {
       // eslint-disable-next-line no-undef
       (window.adsbygoogle = window.adsbygoogle || []).push({});
-    } catch {
-      /* no-op */
+    } catch (err) {
+      // AdSense script not yet ready; will retry on next render.
+      console.debug("[AdSlot] adsbygoogle.push failed", err);
     }
   }, [pubId]);
 

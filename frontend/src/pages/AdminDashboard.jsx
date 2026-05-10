@@ -130,8 +130,8 @@ export default function AdminDashboard() {
             <span className="text-xs text-zinc-500 hidden md:block">{user.email}</span>
             <button
               data-testid="admin-logout"
-              onClick={() => {
-                logout();
+              onClick={async () => {
+                await logout();
                 navigate("/admin/login");
               }}
               className="flex items-center gap-2 px-3 py-2 bg-signal-red hover:bg-[#D32F2F] text-xs font-mono uppercase tracking-wider rounded-sm"

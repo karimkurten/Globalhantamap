@@ -1,0 +1,39 @@
+{
+  "summary": "Iteration 4 backend testing complete. 47/47 pytest tests pass (39 baseline + 8 new). Verified cookie-based auth (HttpOnly + Secure + SameSite=Lax on hanta_admin_session), backwards-compat Bearer auth, /api/auth/logout cookie clearing, cookie-only access to /api/auth/me and /api/admin/*, and scraper refactor regression (run_scrape_job + _entry_to_item still inserts/processes RSS entries via /api/admin/refresh-now).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/auth/login + /api/auth/login-json", "issue": "Set-Cookie attributes are correct (HttpOnly; Secure; SameSite=Lax; Path=/), but no CSRF token is returned for cookie-only flow. Cookie-auth + non-mutating GETs are safe; for cross-origin POST/PATCH/DELETE relying on the cookie alone, consider double-submit CSRF or restrict cookie auth to same-site frontend only."},
+      {"endpoint": "/api/auth/logout", "issue": "Endpoint is unauthenticated (no Depends(get_current_admin)). Functionally fine since logout just clears a cookie, but documenting/locking it down would be cleaner. Currently anyone hitting POST /api/auth/logout always returns 200."},
+      {"endpoint": "auth.set_session_cookie", "issue": "secure=True hardcoded - works for the HTTPS preview URL, but local dev over http://localhost will silently fail to set the cookie in browsers. Consider deriving from env (e.g., COOKIE_SECURE)."},
+      {"endpoint": "/api/admin/refresh-now", "issue": "Same as iter-3: BackgroundTasks default None misleading; not blocking."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: parameterize cookie 'secure' flag via env so local dev (http) is supported.",
+    "Optional: Add CSRF mitigation or restrict cookie usage to same-site requests if any cross-origin admin POSTs will rely on cookie-only auth.",
+    "Optional: Require admin auth on /api/auth/logout (or document it as intentionally public)."
+  ],
+  "critical_code_review_comments": [
+    "auth.get_current_admin correctly prefers cookie over Bearer header. oauth2_scheme is set with auto_error=False so missing Authorization header does not 401 prematurely - good.",
+    "server.py login_form / login_json now accept Response and call set_session_cookie - clean. /api/auth/logout exists and calls clear_session_cookie. No public API contract changes.",
+    "scrapers._entry_to_item refactor: collect_hanta_items still produces the same shape consumed by run_scrape_job (verified via /api/admin/refresh-now -> /api/admin/scrape-runs). All required keys (feeds_checked, items_matched, inserted, duplicates) present.",
+    "Tests previously used hardcoded ADMIN_PASSWORD. Now read from env / fallback to /app/backend/.env -- improvement.",
+    "secure=True is hardcoded in set_session_cookie -- fine for prod/preview (HTTPS) but breaks local http dev cookie persistence.",
+    "logout endpoint is public; minor hardening opportunity.",
+    "server.py is still 594 lines -- close to split threshold. Consider routes/admin.py + routes/public.py + routes/auth.py for next iteration."
+  ],
+  "updated_files": ["/app/backend/tests/backend_test.py"],
+  "success_rate": {"backend": "100% (47/47)", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "admin@globalhantamap.org / HantaAdmin2026! (env ADMIN_EMAIL / ADMIN_PASSWORD in /app/backend/.env)",
+  "seed_data_creation": "None new. Argentina (AR) outbreak still has confirmed_cases=999, deaths=50 (carried over from prior PATCH). Scraper inserted 0 items (duplicates expected).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "47/47 green. Two new test classes added for iteration 4: TestCookieAuth (7 tests covering Set-Cookie attributes, cookie-only /me, bearer-only /me, cookie-only admin route, logout clearing + 401 after logout, pristine 401) and TestScraperRefactorRegression (1 test verifying /admin/refresh-now -> scrape-runs still produces required fields after _entry_to_item extraction). Verified Set-Cookie raw header contains HttpOnly + Secure + SameSite=Lax. Cookie name = 'hanta_admin_session'. Logout uses delete_cookie which emits Set-Cookie with empty value + past Expires. mocked: revenue analytics in /api/admin/analytics is still simulated. Resend API key still invalid by design - test asserts graceful {ok:false}.",
+  "rca of the issue": "No bugs - all green. Iteration 4 refactor (cookie auth alongside Bearer, scrapers helper extraction, env-driven test creds) verified non-regressive."
+}

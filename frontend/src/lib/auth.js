@@ -1,5 +1,5 @@
-import { createContext, useContext, useEffect, useState } from "react";
-import { adminLogin, adminMe } from "./api";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { adminLogin, adminLogout, adminMe } from "./api";
 
 const AuthCtx = createContext(null);
 
@@ -7,33 +7,40 @@ export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    const t = localStorage.getItem("hanta_admin_token");
-    if (!t) {
+  // Hydrate from server: cookie-backed session, no localStorage.
+  const refresh = useCallback(async () => {
+    try {
+      const u = await adminMe();
+      setUser(u);
+    } catch {
+      setUser(null);
+    } finally {
       setLoading(false);
-      return;
     }
-    adminMe()
-      .then((u) => setUser(u))
-      .catch(() => localStorage.removeItem("hanta_admin_token"))
-      .finally(() => setLoading(false));
   }, []);
 
-  const login = async (email, password) => {
-    const data = await adminLogin(email, password);
-    localStorage.setItem("hanta_admin_token", data.access_token);
+  useEffect(() => {
+    refresh();
+  }, [refresh]);
+
+  const login = useCallback(async (email, password) => {
+    await adminLogin(email, password); // sets HttpOnly cookie server-side
     const u = await adminMe();
     setUser(u);
     return u;
-  };
+  }, []);
 
-  const logout = () => {
-    localStorage.removeItem("hanta_admin_token");
+  const logout = useCallback(async () => {
+    try {
+      await adminLogout();
+    } catch {
+      /* ignore */
+    }
     setUser(null);
-  };
+  }, []);
 
   return (
-    <AuthCtx.Provider value={{ user, loading, login, logout }}>
+    <AuthCtx.Provider value={{ user, loading, login, logout, refresh }}>
       {children}
     </AuthCtx.Provider>
   );

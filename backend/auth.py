@@ -1,16 +1,26 @@
-"""JWT auth utilities for Global Hanta Map admin."""
+"""JWT auth utilities for Global Hanta Map admin.
+
+Tokens are issued as both:
+ - HttpOnly + Secure + SameSite=Lax cookie (`hanta_admin_session`) — primary, XSS-resistant
+ - Authorization: Bearer header (returned in JSON for API clients & tests)
+
+`get_current_admin` accepts either source.
+"""
 import os
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 import jwt
 import bcrypt
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, Response, status
 from fastapi.security import OAuth2PasswordBearer
 
 JWT_SECRET = os.environ.get("JWT_SECRET", "change-me")
 JWT_ALG = "HS256"
 ACCESS_TOKEN_EXPIRES_MIN = 60 * 12  # 12 hours
+COOKIE_NAME = "hanta_admin_session"
+COOKIE_MAX_AGE = ACCESS_TOKEN_EXPIRES_MIN * 60
 
+# auto_error=False so missing Bearer header doesn't 401 before we can check cookie
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/api/auth/login", auto_error=False)
 
 
@@ -41,7 +51,28 @@ def decode_token(token: str) -> Optional[dict]:
         return None
 
 
-async def get_current_admin(token: Optional[str] = Depends(oauth2_scheme)) -> dict:
+def set_session_cookie(response: Response, token: str) -> None:
+    response.set_cookie(
+        key=COOKIE_NAME,
+        value=token,
+        max_age=COOKIE_MAX_AGE,
+        httponly=True,
+        secure=True,
+        samesite="lax",
+        path="/",
+    )
+
+
+def clear_session_cookie(response: Response) -> None:
+    response.delete_cookie(key=COOKIE_NAME, path="/")
+
+
+async def get_current_admin(
+    request: Request,
+    bearer: Optional[str] = Depends(oauth2_scheme),
+) -> dict:
+    """Resolve admin from HttpOnly cookie first, else Authorization Bearer header."""
+    token = request.cookies.get(COOKIE_NAME) or bearer
     if not token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
     payload = decode_token(token)

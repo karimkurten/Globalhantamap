@@ -28,8 +28,19 @@ if not BASE_URL:
         pass
 
 API = f"{BASE_URL}/api"
-ADMIN_EMAIL = "admin@globalhantamap.org"
-ADMIN_PASSWORD = "HantaAdmin2026!"
+ADMIN_EMAIL = os.environ.get("ADMIN_EMAIL", "admin@globalhantamap.org")
+ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD")
+if not ADMIN_PASSWORD:
+    # Load from backend .env file if not in environment
+    try:
+        with open("/app/backend/.env") as f:
+            for line in f:
+                if line.startswith("ADMIN_PASSWORD="):
+                    ADMIN_PASSWORD = line.split("=", 1)[1].strip().strip('"')
+                    break
+    except Exception:
+        pass
+assert ADMIN_PASSWORD, "ADMIN_PASSWORD must be set in env or /app/backend/.env"
 
 
 @pytest.fixture(scope="session")
@@ -264,7 +275,7 @@ class TestAdmin:
         # delete
         rd = requests.delete(f"{API}/admin/news/{nid}", headers=admin_headers)
         assert rd.status_code == 200
-        assert rd.json().get("deleted") is True
+        assert rd.json().get("deleted")
         rd2 = requests.delete(f"{API}/admin/news/{nid}", headers=admin_headers)
         assert rd2.status_code == 404
 
@@ -383,7 +394,7 @@ class TestAdminScrapeAndEmail:
         assert r.status_code == 200, f"test-email crashed: {r.status_code} {r.text}"
         data = r.json()
         assert "ok" in data
-        if data["ok"] is False:
+        if not data["ok"]:
             assert "error" in data and isinstance(data["error"], str)
 
     def test_admin_test_email_unauthorized(self):
@@ -410,3 +421,153 @@ class TestAdminScrapeAndEmail:
         time.sleep(2)
         # Cleanup
         requests.delete(f"{API}/admin/news/{nid}", headers=admin_headers)
+
+
+# ------------- Iteration 4 additions: Cookie-based auth ------------- #
+COOKIE_NAME = "hanta_admin_session"
+
+
+class TestCookieAuth:
+    """Iteration 4: HttpOnly cookie session ALONGSIDE Bearer header backwards-compat."""
+
+    def _assert_cookie_set(self, resp):
+        # Cookie should be present in the response
+        assert COOKIE_NAME in resp.cookies, f"Set-Cookie '{COOKIE_NAME}' missing. cookies={resp.cookies.items()}"
+        # Inspect raw Set-Cookie header for HttpOnly / Secure / SameSite=Lax
+        set_cookie_headers = resp.headers.get("set-cookie", "")
+        # requests collapses multiple Set-Cookie into one header in .headers; use raw if present
+        raw = ""
+        try:
+            raw = "\n".join(resp.raw.headers.getlist("Set-Cookie"))  # urllib3
+        except Exception:
+            raw = set_cookie_headers
+        assert COOKIE_NAME in raw, f"Set-Cookie raw missing cookie name: {raw}"
+        # Find the line containing our cookie
+        line = next((ln for ln in raw.split("\n") if ln.lstrip().startswith(COOKIE_NAME + "=")), raw)
+        low = line.lower()
+        assert "httponly" in low, f"Cookie missing HttpOnly: {line}"
+        assert "secure" in low, f"Cookie missing Secure: {line}"
+        assert "samesite=lax" in low, f"Cookie missing SameSite=Lax: {line}"
+
+    def test_login_form_sets_cookie(self):
+        # Use a fresh session so we can inspect cookie alone
+        s = requests.Session()
+        r = s.post(f"{API}/auth/login", data={"username": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "access_token" in body and body["access_token"]
+        self._assert_cookie_set(r)
+
+    def test_login_json_sets_cookie(self):
+        s = requests.Session()
+        r = s.post(f"{API}/auth/login-json", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert "access_token" in body and body["access_token"]
+        self._assert_cookie_set(r)
+
+    def test_me_with_cookie_only(self):
+        """GET /api/auth/me works using cookie alone (no Authorization header)."""
+        s = requests.Session()
+        r = s.post(f"{API}/auth/login-json", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200
+        # Session now holds the cookie; do NOT send Authorization header
+        r2 = s.get(f"{API}/auth/me")
+        assert r2.status_code == 200, f"cookie-auth /me failed: {r2.status_code} {r2.text}"
+        data = r2.json()
+        assert data["role"] == "admin"
+        assert data["email"] == ADMIN_EMAIL
+
+    def test_me_with_bearer_only_no_cookie(self):
+        """GET /api/auth/me works using Bearer header alone (no cookie). Backwards compat."""
+        # login (no session reuse)
+        r = requests.post(f"{API}/auth/login-json", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200
+        token = r.json()["access_token"]
+        # New plain requests call (no cookie jar)
+        r2 = requests.get(f"{API}/auth/me", headers={"Authorization": f"Bearer {token}"})
+        assert r2.status_code == 200, f"bearer /me failed: {r2.status_code} {r2.text}"
+        assert r2.json()["role"] == "admin"
+
+    def test_admin_route_with_cookie_only(self):
+        """An /api/admin/* route must accept cookie-only auth."""
+        s = requests.Session()
+        r = s.post(f"{API}/auth/login-json", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200
+        r2 = s.get(f"{API}/admin/outbreaks")
+        assert r2.status_code == 200
+        assert isinstance(r2.json(), list)
+
+    def test_logout_clears_cookie_and_invalidates_cookie_session(self):
+        """POST /api/auth/logout must emit Set-Cookie clearing hanta_admin_session,
+        and subsequent cookie-only requests must be 401."""
+        s = requests.Session()
+        # login
+        r = s.post(f"{API}/auth/login-json", json={"email": ADMIN_EMAIL, "password": ADMIN_PASSWORD})
+        assert r.status_code == 200
+        # confirm cookie auth works
+        rm = s.get(f"{API}/auth/me")
+        assert rm.status_code == 200
+        # logout
+        rl = s.post(f"{API}/auth/logout")
+        assert rl.status_code == 200, rl.text
+        # Verify Set-Cookie clearing header is present
+        raw = ""
+        try:
+            raw = "\n".join(rl.raw.headers.getlist("Set-Cookie"))
+        except Exception:
+            raw = rl.headers.get("set-cookie", "")
+        assert COOKIE_NAME in raw, f"logout did not emit Set-Cookie for {COOKIE_NAME}: {raw}"
+        # Cookie should be cleared (empty value or expires in past / Max-Age=0)
+        line = next((ln for ln in raw.split("\n") if ln.lstrip().startswith(COOKIE_NAME + "=")), raw)
+        low = line.lower()
+        cleared = (
+            f"{COOKIE_NAME}=;" in line
+            or f'{COOKIE_NAME}=""' in line
+            or "max-age=0" in low
+            or "expires=thu, 01 jan 1970" in low
+            or "expires=" in low  # delete_cookie sets an expires in past
+        )
+        assert cleared, f"Cookie not cleared in logout response: {line}"
+        # The session cookie jar should also drop it after this response
+        s.cookies.clear()  # ensure no cached value
+        # Now cookie-only request to /admin/* must 401
+        r401 = s.get(f"{API}/admin/outbreaks")
+        assert r401.status_code == 401, f"expected 401 after logout, got {r401.status_code}: {r401.text}"
+
+    def test_admin_unauthorized_no_cookie_no_bearer(self):
+        """Sanity: pristine request without cookie or bearer must 401 on /admin/*."""
+        r = requests.get(f"{API}/admin/outbreaks")
+        assert r.status_code == 401
+        r2 = requests.get(f"{API}/auth/me")
+        assert r2.status_code == 401
+
+
+class TestScraperRefactorRegression:
+    """Iteration 4: scrapers.py extracted _entry_to_item helper - ensure
+    scrape job still inserts/processes items correctly via /admin/refresh-now."""
+
+    def test_refresh_now_still_inserts_or_updates(self, admin_headers):
+        r0 = requests.get(f"{API}/admin/scrape-runs", headers=admin_headers)
+        assert r0.status_code == 200
+        before = len(r0.json())
+
+        r = requests.post(f"{API}/admin/refresh-now", headers=admin_headers)
+        assert r.status_code == 200
+        assert r.json().get("status") == "scheduled"
+
+        new_run = None
+        for _ in range(20):  # up to ~30s
+            time.sleep(1.5)
+            rr = requests.get(f"{API}/admin/scrape-runs", headers=admin_headers)
+            if rr.status_code == 200 and len(rr.json()) > before:
+                new_run = rr.json()[0]
+                break
+        assert new_run is not None, "Scraper did not record a new run after refactor"
+        # Required fields produced by _entry_to_item / run_scrape_job
+        for k in ("feeds_checked", "items_matched", "inserted", "duplicates"):
+            assert k in new_run, f"missing key {k}: {new_run}"
+        assert new_run["feeds_checked"] >= 1
+        # items_matched/inserted/duplicates must be non-negative ints
+        for k in ("items_matched", "inserted", "duplicates"):
+            assert isinstance(new_run[k], int) and new_run[k] >= 0

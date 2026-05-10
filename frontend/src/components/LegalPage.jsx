@@ -27,8 +27,8 @@ export default function LegalPage({ title, kicker, intro, sections, path, descri
           </p>
         )}
         <div className="space-y-10">
-          {sections.map((s, i) => (
-            <section key={i} data-testid={`legal-section-${i}`}>
+          {sections.map((s) => (
+            <section key={s.heading} data-testid={`legal-section-${s.heading.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`}>
               <h2 className="font-display font-bold text-2xl mb-3 text-white">
                 {s.heading}
               </h2>

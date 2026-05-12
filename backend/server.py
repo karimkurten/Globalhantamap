@@ -764,10 +764,21 @@ async def sitemap():
 
 app.include_router(api)
 
+# CORS — explicit origins required when allow_credentials=True (wildcard "*"
+# is not allowed alongside credentials per the CORS spec).
+# Configurable via CORS_ORIGINS env var (comma-separated) — defaults to the
+# production frontend domain so cookies + Authorization headers work out of
+# the box on Railway/Vercel deploys.
+_cors_origins_env = os.environ.get(
+    "CORS_ORIGINS",
+    "https://globalhantamap.com,https://www.globalhantamap.com",
+)
+_cors_origins = [o.strip() for o in _cors_origins_env.split(",") if o.strip() and o.strip() != "*"]
+
 app.add_middleware(
     CORSMiddleware,
+    allow_origins=_cors_origins,
     allow_credentials=True,
-    allow_origins=os.environ.get("CORS_ORIGINS", "*").split(","),
     allow_methods=["*"],
     allow_headers=["*"],
 )

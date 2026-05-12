@@ -25,7 +25,7 @@ RUN pip install --upgrade pip && \
 COPY . .
 
 # Railway provides $PORT at runtime; fall back to 8001 locally
-ENV PORT=8001
+ENV =8001
 EXPOSE 8001
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \

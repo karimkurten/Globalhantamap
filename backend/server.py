@@ -138,50 +138,57 @@ def _strip_id(doc: dict) -> dict:
 
 
 async def seed_database():
-    """Idempotently seed the database. Each collection is seeded independently so
-    a failure in one does not prevent the others, and progress is logged."""
+    """Idempotently seed the database on first boot only. After the first run,
+    a marker doc is inserted in '_meta' so subsequent restarts skip seeding —
+    important so 'Clear seed' isn't undone by a redeploy/restart.
+
+    To force re-seeding: hit POST /api/admin/reseed (auth required).
+    To disable seeding entirely: set SKIP_SEED=true in environment.
+    """
+    if os.environ.get("SKIP_SEED", "false").lower() == "true":
+        logger.info("[seed] SKIP_SEED=true - skipping all seeding")
+        return
+
+    marker = await db["_meta"].find_one({"_id": "initial_seed"})
+    if marker:
+        logger.info("[seed] Initial seed already performed at %s - skipping", marker.get("at"))
+        return
+
+    logger.info("[seed] First boot - seeding initial data")
+
     # Outbreaks
     try:
-        count = await db.outbreaks.count_documents({})
-        if count == 0:
+        if await db.outbreaks.count_documents({}) == 0:
             outbreaks = build_seed_outbreaks()
             for o in outbreaks:
                 o["id"] = str(uuid.uuid4())
             await db.outbreaks.insert_many(outbreaks)
             logger.info("[seed] Seeded %d outbreaks", len(outbreaks))
-        else:
-            logger.info("[seed] outbreaks already has %d docs - skipping", count)
     except Exception as e:
         logger.exception("[seed] outbreaks seeding failed: %s", e)
 
     # Timelines
     try:
-        count = await db.timelines.count_documents({})
-        if count == 0:
+        if await db.timelines.count_documents({}) == 0:
             timelines = build_seed_timelines()
             docs = [{"country_code": code, "points": pts} for code, pts in timelines.items()]
             await db.timelines.insert_many(docs)
             logger.info("[seed] Seeded timelines for %d countries", len(docs))
-        else:
-            logger.info("[seed] timelines already has %d docs - skipping", count)
     except Exception as e:
         logger.exception("[seed] timelines seeding failed: %s", e)
 
     # News
     try:
-        count = await db.news.count_documents({})
-        if count == 0:
+        if await db.news.count_documents({}) == 0:
             items = build_news_items(15)
             for it in items:
                 it["id"] = str(uuid.uuid4())
             await db.news.insert_many(items)
             logger.info("[seed] Seeded %d news items", len(items))
-        else:
-            logger.info("[seed] news already has %d docs - skipping", count)
     except Exception as e:
         logger.exception("[seed] news seeding failed: %s", e)
 
-    # Admin user
+    # Admin user (always check - admin must exist)
     try:
         existing = await db.users.find_one({"email": ADMIN_EMAIL})
         if not existing:
@@ -193,15 +200,12 @@ async def seed_database():
                 "created_at": datetime.now(timezone.utc).isoformat(),
             })
             logger.info("[seed] Seeded admin user %s", ADMIN_EMAIL)
-        else:
-            logger.info("[seed] admin user already exists")
     except Exception as e:
         logger.exception("[seed] admin user seeding failed: %s", e)
 
     # Ad slots
     try:
-        count = await db.ad_slots.count_documents({})
-        if count == 0:
+        if await db.ad_slots.count_documents({}) == 0:
             slots = [
                 {"slot_key": "homepage_hero", "enabled": True, "label": "Homepage Hero Banner", "description": "728x90 banner under hero"},
                 {"slot_key": "sidebar_dashboard", "enabled": True, "label": "Dashboard Sidebar", "description": "300x250 sidebar"},
@@ -211,10 +215,17 @@ async def seed_database():
             ]
             await db.ad_slots.insert_many(slots)
             logger.info("[seed] Seeded %d ad slots", len(slots))
-        else:
-            logger.info("[seed] ad_slots already has %d docs - skipping", count)
     except Exception as e:
         logger.exception("[seed] ad_slots seeding failed: %s", e)
+
+    # Mark seeding done so we don't reseed on restart
+    try:
+        await db["_meta"].insert_one({
+            "_id": "initial_seed",
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+    except Exception as e:
+        logger.exception("[seed] marker insert failed: %s", e)
 
 
 async def refresh_outbreak_data_job():
@@ -578,6 +589,63 @@ async def admin_analytics(admin=Depends(get_current_admin)):
 async def admin_refresh_now(admin=Depends(get_current_admin), bg: BackgroundTasks = None):
     bg.add_task(refresh_outbreak_data_job)
     return {"status": "scheduled"}
+
+
+@api.post("/admin/ai-backfill-outbreaks")
+async def admin_ai_backfill(admin=Depends(get_current_admin), limit: int = 30):
+    """Re-process recent news items through Claude to extract outbreak figures.
+    Use this once after deploying / clearing seed data to populate outbreaks
+    from already-collected official articles. Limit defaults to 30 most-recent items.
+    """
+    from ai_service import extract_outbreak_from_article
+    from scrapers import upsert_outbreak_from_extraction
+
+    news_items = await db.news.find({}, {"_id": 0}).sort("published_at", -1).to_list(limit)
+    attempts = 0
+    created = 0
+    updated = 0
+    no_data = 0
+    for it in news_items:
+        attempts += 1
+        try:
+            extracted = await extract_outbreak_from_article(
+                it.get("title", ""), it.get("summary", "")
+            )
+            if not extracted:
+                no_data += 1
+                continue
+            result = await upsert_outbreak_from_extraction(db, extracted, it)
+            if result == "created":
+                created += 1
+            elif result == "updated":
+                updated += 1
+        except Exception as e:
+            logger.exception("Backfill AI extract failed: %s", e)
+    return {
+        "attempts": attempts,
+        "outbreaks_created": created,
+        "outbreaks_updated": updated,
+        "no_extractable_data": no_data,
+        "status": "ok",
+    }
+
+
+@api.post("/admin/clear-seed-outbreaks")
+async def admin_clear_seed_outbreaks(admin=Depends(get_current_admin)):
+    """Delete seeded (non-scraped) outbreak records so the dashboard reflects
+    only AI-extracted / manually-verified real data. Scraped outbreak records
+    (with scraped=True) are preserved."""
+    # Delete outbreaks that are NOT marked as scraped (i.e., the seed data)
+    result = await db.outbreaks.delete_many({"scraped": {"$ne": True}})
+    # Also clear seed timelines so they don't show fake history
+    tl_result = await db.timelines.delete_many({})
+    # Optionally clear seeded news (items without 'scraped:true')
+    return {
+        "outbreaks_deleted": result.deleted_count,
+        "timelines_deleted": tl_result.deleted_count,
+        "status": "ok",
+        "note": "Scraped outbreak records (if any) are preserved. Run /api/admin/refresh-now to populate from real sources.",
+    }
 
 
 @api.post("/admin/reseed")

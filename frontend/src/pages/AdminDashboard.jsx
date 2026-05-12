@@ -4,14 +4,15 @@ import { useAuth } from "../lib/auth";
 import {
   adminFetchOutbreaks, adminUpdateOutbreak, adminFetchNews, adminCreateNews,
   adminDeleteNews, adminFetchSubs, adminFetchAdSlots, adminUpdateAdSlot,
-  adminAnalytics, adminRefreshNow, adminReseed, fetchHealth,
+  adminAnalytics, adminRefreshNow, adminReseed, adminClearSeed,
+  adminAiBackfill, fetchHealth,
 } from "../lib/api";
 import {
   ResponsiveContainer, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip,
 } from "recharts";
 import {
   SignOut, Pencil, Trash, ArrowsClockwise, ChartLineUp, EnvelopeSimple,
-  Megaphone, MapTrifold, CurrencyDollar, Database,
+  Megaphone, MapTrifold, CurrencyDollar, Database, Sparkle,
 } from "@phosphor-icons/react";
 import { toast } from "sonner";
 
@@ -124,6 +125,17 @@ export default function AdminDashboard() {
     }
   };
 
+  const clearSeed = async () => {
+    if (!window.confirm("Delete all seed outbreak data? Scraped real records will be preserved. Run 'Refresh feeds' after to populate with live data.")) return;
+    try {
+      const r = await adminClearSeed();
+      toast.success(`Deleted ${r.outbreaks_deleted} outbreaks + ${r.timelines_deleted} timelines`);
+      loadAll();
+    } catch {
+      toast.error("Clear seed failed");
+    }
+  };
+
   const runHealthCheck = async () => {
     try {
       const h = await fetchHealth();
@@ -157,6 +169,20 @@ export default function AdminDashboard() {
               className="flex items-center gap-2 px-3 py-2 border border-signal-orange/40 text-signal-orange hover:bg-signal-orange/10 text-xs font-mono uppercase tracking-wider rounded-sm"
             >
               <Database size={14} /> Reseed
+            </button>
+            <button
+              data-testid="admin-clear-seed"
+              onClick={clearSeed}
+              className="flex items-center gap-2 px-3 py-2 border border-signal-red/40 text-signal-red hover:bg-signal-red/10 text-xs font-mono uppercase tracking-wider rounded-sm"
+            >
+              <Trash size={14} /> Clear seed
+            </button>
+            <button
+              data-testid="admin-ai-backfill"
+              onClick={aiBackfill}
+              className="flex items-center gap-2 px-3 py-2 border border-signal-blue/40 text-signal-blue hover:bg-signal-blue/10 text-xs font-mono uppercase tracking-wider rounded-sm"
+            >
+              <Sparkle size={14} /> AI backfill
             </button>
             <button
               data-testid="admin-refresh"
